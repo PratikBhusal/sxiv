@@ -27,6 +27,7 @@
 #include <locale.h>
 #include <X11/cursorfont.h>
 #include <X11/Xatom.h>
+#include <X11/Xresource.h>
 
 enum {
 	H_TEXT_PAD = 5,
@@ -102,9 +103,52 @@ void win_check_wm_support(Display *dpy, Window root)
 #define INIT_ATOM_(atom) \
 	atoms[ATOM_##atom] = XInternAtom(e->dpy, #atom, False);
 
+char *get_xresource(Display *dpy, const char* rsc, char* dst)
+{
+	char *type;
+	XrmValue ret;
+	XrmDatabase db;
+	char fullname[256];
+	char *resource_manager;
+
+	XrmInitialize();
+	resource_manager = XResourceManagerString(dpy);
+
+	if (resource_manager == NULL)
+		return NULL;
+
+	db = XrmGetStringDatabase(resource_manager);
+
+	if (db == NULL)
+		return NULL;
+
+	snprintf(fullname, sizeof(fullname), "%s.%s", "sxiv", rsc);
+	fullname[sizeof(fullname) - 1] = '\0';
+
+	XrmGetResource(db, fullname, "String", &type, &ret);
+
+	if (ret.addr != NULL && !strncmp("String", type, 64)) {
+		strncpy(dst, ret.addr, strnlen(ret.addr, 256));
+	}
+
+	return NULL;
+}
+
 void win_init(win_t *win)
 {
 	win_env_t *e;
+	char XBAR_FONT[256];
+	char XSEL_COLOR[8];
+	char XBAR_BG_COLOR[8];
+	char XBAR_FG_COLOR[8];
+	char XWIN_BG_COLOR[8];
+	char XWIN_FS_COLOR[8];
+
+	strncpy(XSEL_COLOR, SEL_COLOR, 8);
+	strncpy(XBAR_BG_COLOR, BAR_BG_COLOR, 8);
+	strncpy(XBAR_FG_COLOR, BAR_FG_COLOR, 8);
+	strncpy(XWIN_BG_COLOR, WIN_BG_COLOR, 8);
+	strncpy(XWIN_FS_COLOR, WIN_FS_COLOR, 8);
 
 	memset(win, 0, sizeof(win_t));
 
@@ -122,13 +166,20 @@ void win_init(win_t *win)
 	if (setlocale(LC_CTYPE, "") == NULL || XSupportsLocale() == 0)
 		error(0, 0, "No locale support");
 
-	win_init_font(e, BAR_FONT);
+	get_xresource(e->dpy, "font", XBAR_FONT);
+	get_xresource(e->dpy, "selColor", XSEL_COLOR);
+	get_xresource(e->dpy, "fsColor", XWIN_FS_COLOR);
+	get_xresource(e->dpy, "background", XWIN_BG_COLOR);
+	get_xresource(e->dpy, "barBackground", XBAR_BG_COLOR);
+	get_xresource(e->dpy, "barForeground", XBAR_FG_COLOR);
 
-	win_alloc_color(e, WIN_BG_COLOR, &win->bgcol);
-	win_alloc_color(e, WIN_FS_COLOR, &win->fscol);
-	win_alloc_color(e, SEL_COLOR,    &win->selcol);
-	win_alloc_color(e, BAR_BG_COLOR, &win->bar.bgcol);
-	win_alloc_color(e, BAR_FG_COLOR, &win->bar.fgcol);
+	win_init_font(e, XBAR_FONT);
+
+	win_alloc_color(e, XWIN_BG_COLOR, &win->bgcol);
+	win_alloc_color(e, XWIN_FS_COLOR, &win->fscol);
+	win_alloc_color(e, XSEL_COLOR, &win->selcol);
+	win_alloc_color(e, XBAR_BG_COLOR, &win->bar.bgcol);
+	win_alloc_color(e, XBAR_FG_COLOR, &win->bar.fgcol);
 
 	win->bar.l.size = BAR_L_LEN;
 	win->bar.r.size = BAR_R_LEN;
@@ -210,7 +261,7 @@ void win_open(win_t *win)
 	                          e->depth, InputOutput, e->vis, 0, NULL);
 	if (win->xwin == None)
 		error(EXIT_FAILURE, 0, "Error creating X window");
-	
+
 	XSelectInput(e->dpy, win->xwin,
 	             ButtonReleaseMask | ButtonPressMask | KeyPressMask |
 	             PointerMotionMask | StructureNotifyMask);
@@ -492,4 +543,3 @@ void win_cursor_pos(win_t *win, int *x, int *y)
 	if (!XQueryPointer(win->env.dpy, win->xwin, &w, &w, &i, &i, x, y, &ui))
 		*x = *y = 0;
 }
-
